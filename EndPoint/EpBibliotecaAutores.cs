@@ -12,76 +12,87 @@ public static class EPEscolaAutores
         //POST /Autores/seed
         rotasAutores.MapPost("/seed", async (BibliotecaContext dbContext, bool excluirExistentes = false) =>
         {
-            //Autores para teste
-            Autor Autor1 = new Autor(0,"Autor1");
-            Autor Autor2 = new Autor(0, "Autor2");
-            Autor Autor3 = new Autor(0, "Autor3");
+            var Autor1 = new Autor(0, "Autor1");
+            var Autor2 = new Autor(0, "Autor2");
+            var Autor3 = new Autor(0, "Autor3");
+
             if (excluirExistentes)
             {
                 dbContext.Autores.RemoveRange(dbContext.Autores);
             }
+
             dbContext.Autores.AddRange([Autor1, Autor2, Autor3]);
             await dbContext.SaveChangesAsync();
+            return TypedResults.Ok("Autores inseridos com sucesso.");
         });
 
         //GET /Autores/
         rotasAutores.MapGet("/", async (BibliotecaContext dbContext, string? Nome) =>
         {
-            IEnumerable<Autor> Autores = await dbContext.Autores.ToListAsync();
-            if (Autores.Count() > 0)
-            {
-                Autores = Autores.Where(c => c.Nome == Nome);
-            }
-            return TypedResults.Ok(Autores);
-        });
+            var autores = await dbContext.Autores.ToListAsync();
 
+            if (!string.IsNullOrWhiteSpace(Nome))
+            {
+                autores = autores.Where(c => c.Nome == Nome).ToList();
+            }
+
+            return TypedResults.Ok(autores);
+        });
 
         //GET /Autores/{Id}
         rotasAutores.MapGet("/{Id}", async (BibliotecaContext dbContext, int Id) =>
         {
-            Autor? Autor = await dbContext.Autores.FindAsync(Id);
-            if (Autor is null)
-            {
-                return Results.NotFound();
-            }
-            return TypedResults.Ok(Autor);
+            var autor = await dbContext.Autores.FindAsync(Id);
+            return autor is null ? Results.NotFound() : TypedResults.Ok(autor);
         });
 
         //POST /Autores
-        rotasAutores.MapPost("/", async (BibliotecaContext dbContext, Autor Autor) =>
+        rotasAutores.MapPost("/", async (BibliotecaContext dbContext, AutorDto dto) =>
         {
-            var novoAutor = dbContext.Autores.Add(Autor);
+            var novoAutor = new Autor
+            {
+                Nome = dto.Nome
+            };
+
+            dbContext.Autores.Add(novoAutor);
             await dbContext.SaveChangesAsync();
-            return TypedResults.Created($"/Autores/{Autor.Id}", Autor);
+
+            return TypedResults.Created($"/Autores/{novoAutor.Id}", new AutorDto
+            {
+                Id = novoAutor.Id,
+                Nome = novoAutor.Nome
+            });
         });
 
 
         //PUT /Autores/{Id}
-        rotasAutores.MapPut("/{Id}", async (BibliotecaContext dbContext, int Id, Autor Autor) =>
+        rotasAutores.MapPut("/{Id}", async (BibliotecaContext dbContext, int Id, Autor autor) =>
         {
-            Autor? AutorEncontrado = await dbContext.Autores.FindAsync(Id);
-            if (AutorEncontrado is null)
-            {
+            var autorEncontrado = await dbContext.Autores.FindAsync(Id);
+            if (autorEncontrado is null)
                 return Results.NotFound();
-            }
-            Autor.Id = Id;
-            dbContext.Entry(AutorEncontrado).CurrentValues.SetValues(Autor);
+
+            if (string.IsNullOrWhiteSpace(autor.Nome))
+                return Results.BadRequest("O nome do autor é obrigatório.");
+
+            autor.Id = Id;
+            dbContext.Entry(autorEncontrado).CurrentValues.SetValues(autor);
             await dbContext.SaveChangesAsync();
+
             return TypedResults.NoContent();
         });
 
         //DELETE /Autores/{Id}
         rotasAutores.MapDelete("/{Id}", async (BibliotecaContext dbContext, int Id) =>
         {
-            Autor? AutorEncontrado = await dbContext.Autores.FindAsync(Id);
-            if (AutorEncontrado is null)
-            {
+            var autorEncontrado = await dbContext.Autores.FindAsync(Id);
+            if (autorEncontrado is null)
                 return Results.NotFound();
-            }
-            dbContext.Autores.Remove(AutorEncontrado);
+
+            dbContext.Autores.Remove(autorEncontrado);
             await dbContext.SaveChangesAsync();
+
             return TypedResults.NoContent();
         });
     }
 }
-

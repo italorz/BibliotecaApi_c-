@@ -7,126 +7,134 @@ namespace BibliotecaApi.EndPoint
     {
         public static void RegistrarEndpointsLivros(this IEndpointRouteBuilder rotas)
         {
-            //agrupamento de rotas
-            RouteGroupBuilder rotasLivros = rotas.MapGroup("/Livros");
+            var rotasLivros = rotas.MapGroup("/Livros");
 
+            // GET /Livros
             rotasLivros.MapGet("/", async (BibliotecaContext dbContext) =>
             {
-                //para evitar a recursividade entre Livro e Autor no json de retorno,
-                //é necessário criar as classes DTO para retirar os atributos ciclicos entre elas
-                var Livros = await dbContext.Livros
-                                               .Include(a => a.Autor)
-                                               .OrderBy(a => a.Titulo)
-                                               .Select(a => new LivroDto
-                                               {
-                                                   Id = a.Id,
-                                                   Titulo = a.Titulo,
-                                                   AutorId = a.AutorId,
-                                                   Autor = new AutorDto
-                                                   {
-                                                       Id = a.Autor.Id,
-                                                       Nome = a.Autor.Nome
-                                                       
-                                                   }
-                                               })
-                                                .ToListAsync();
-                return TypedResults.Ok(Livros);
+                var livros = await dbContext.Livros
+                    .Include(l => l.Autor)
+                    .OrderBy(l => l.Titulo)
+                    .Select(l => new LivroDto
+                    {
+                        Id = l.Id,
+                        Titulo = l.Titulo,
+                        AutorId = l.AutorId,
+                        
+                    })
+                    .ToListAsync();
+
+                return TypedResults.Ok(livros);
             });
 
-
+            // GET /Livros/{Id}
             rotasLivros.MapGet("/{Id}", async (BibliotecaContext dbContext, int Id) =>
             {
-                // Consultar Livro específico
-                var Livro = await dbContext.Livros
-                                               .Include(a => a.Autor)
-                                               .OrderBy(a => a.Titulo)
-                                               .Select(a => new LivroDto
-                                               {
-                                                   Id = a.Id,
-                                                   Titulo = a.Titulo,
-                                                   AutorId = a.AutorId,
-                                                   Autor = new AutorDto
-                                                   {
-                                                       Id = a.Autor.Id,
-                                                       Nome = a.Autor.Nome,
-                                                       
-                                                   }
-                                               }).FirstOrDefaultAsync(a => a.Id == Id);
+                var livro = await dbContext.Livros
+                    .Include(l => l.Autor)
+                    .Where(l => l.Id == Id)
+                    .Select(l => new LivroDto
+                    {
+                        Id = l.Id,
+                        Titulo = l.Titulo,
+                        AutorId = l.AutorId,
+                        
+                    })
+                    .FirstOrDefaultAsync();
 
-                if (Livro is null)
+                return livro is null ? Results.NotFound() : TypedResults.Ok(livro);
+            });
+
+            // POST /Livros
+            rotasLivros.MapPost("/", async (BibliotecaContext dbContext, LivroDto livroDto) =>
+            {
+                var autorExiste = await dbContext.Autores.AnyAsync(a => a.Id == livroDto.AutorId);
+                if (!autorExiste)
+                {
+                    return Results.NotFound("Autor não encontrado.");
+                }
+
+                var novoLivro = new Livro
+                {
+                    Titulo = livroDto.Titulo,
+                    AutorId = livroDto.AutorId
+                };
+
+                dbContext.Livros.Add(novoLivro);
+                await dbContext.SaveChangesAsync();
+
+                var autor = await dbContext.Autores.FindAsync(novoLivro.AutorId);
+
+                var livroDtoSaida = new LivroDto
+                {
+                    Id = novoLivro.Id,
+                    Titulo = novoLivro.Titulo,
+                    AutorId = novoLivro.AutorId,
+                    
+                };
+
+                return TypedResults.Created($"/Livros/{novoLivro.Id}", livroDtoSaida);
+            });
+
+            // PUT /Livros/{Id}
+            rotasLivros.MapPut("/{Id}", async (BibliotecaContext dbContext, int Id, LivroDto livroDto) =>
+            {
+                var livroEncontrado = await dbContext.Livros.FindAsync(Id);
+                if (livroEncontrado is null)
                 {
                     return Results.NotFound();
                 }
-                return TypedResults.Ok(Livro);
+
+                var autorExiste = await dbContext.Autores.AnyAsync(a => a.Id == livroDto.AutorId);
+                if (!autorExiste)
+                {
+                    return Results.NotFound("Autor não encontrado.");
+                }
+
+                livroEncontrado.Titulo = livroDto.Titulo;
+                livroEncontrado.AutorId = livroDto.AutorId;
+
+                await dbContext.SaveChangesAsync();
+                return TypedResults.NoContent();
             });
 
+            // DELETE /Livros/{Id}
+            rotasLivros.MapDelete("/{Id}", async (BibliotecaContext dbContext, int Id) =>
+            {
+                var livroEncontrado = await dbContext.Livros.FindAsync(Id);
+                if (livroEncontrado is null)
+                {
+                    return Results.NotFound();
+                }
 
-            //POST /Livros/seed
+                dbContext.Livros.Remove(livroEncontrado);
+                await dbContext.SaveChangesAsync();
+                return TypedResults.NoContent();
+            });
+
+            // POST /Livros/seed
             rotasLivros.MapPost("/seed", async (BibliotecaContext dbContext, bool excluirExistentes = false) =>
             {
-                // Cria uma lista de Livros "mockados"
-                Livro novoLivro1 = new Livro { Titulo = "Joao e Maria", AutorId = 1 };
-                Livro novoLivro2 = new Livro { Titulo = "Livro2", AutorId = 1 };
-                Livro novoLivro3 = new Livro { Titulo = "Livro3", AutorId = 2 };
-
                 if (excluirExistentes)
                 {
                     dbContext.Livros.RemoveRange(dbContext.Livros);
+                    await dbContext.SaveChangesAsync();
                 }
 
-                dbContext.Livros.AddRange([novoLivro1, novoLivro2, novoLivro3]);
-                await dbContext.SaveChangesAsync();
-
-            });
-
-            //POST /Livros
-            rotasLivros.MapPost("/", async (BibliotecaContext dbContext, Livro Livro, int idAutor) =>
-            {
-                //verifica se o Autor existe
-                bool AutorExiste = await dbContext.Autores.AnyAsync(c => c.Id == idAutor);
-                if (!AutorExiste)
+                if (!await dbContext.Autores.AnyAsync())
                 {
-                    return Results.NotFound();
-                }
-                var novoLivro = dbContext.Livros.Add(Livro);
-                await dbContext.SaveChangesAsync();
-                return TypedResults.Created($"/Livros/{Livro.Id}", Livro);
-            });
-
-            //PUT /Livros/{Id}
-            rotasLivros.MapPut("/{Id}", async (BibliotecaContext dbContext, int Id, Livro Livro) =>
-            {
-                Livro? LivroEncontrado = await dbContext.Livros.FindAsync(Id);
-                if (LivroEncontrado is null)
-                {
-                    return Results.NotFound();
-                }
-                Livro.Id = Id;
-                dbContext.Entry(LivroEncontrado).CurrentValues.SetValues(Livro);
-                await dbContext.SaveChangesAsync();
-                return TypedResults.NoContent();
-            });
-
-
-            //DELETE /Livros/{Id}
-            rotasLivros.MapDelete("/{Id}", async (BibliotecaContext dbContext, int Id) =>
-            {
-                Livro? LivroEncontrado = await dbContext.Livros.FindAsync(Id);
-                if (LivroEncontrado is null)
-                {
-                    return Results.NotFound();
+                    return Results.BadRequest("É necessário cadastrar autores antes de adicionar livros.");
                 }
 
-                dbContext.Livros.Remove(LivroEncontrado);
+                var livro1 = new Livro { Titulo = "João e Maria", AutorId = 1 };
+                var livro2 = new Livro { Titulo = "Livro2", AutorId = 1 };
+                var livro3 = new Livro { Titulo = "Livro3", AutorId = 2 };
+
+                dbContext.Livros.AddRange(livro1, livro2, livro3);
                 await dbContext.SaveChangesAsync();
-                return TypedResults.NoContent();
 
+                return Results.Ok("Livros adicionados com sucesso.");
             });
-
-
         }
-
-
     }
-
 }
